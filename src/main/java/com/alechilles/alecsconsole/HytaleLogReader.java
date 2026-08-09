@@ -59,6 +59,17 @@ public final class HytaleLogReader {
             LogFilter filter,
             int resultLimit,
             BooleanSupplier cancelled) {
+        Path normalized = path == null ? null : path.toAbsolutePath().normalize();
+        Path parent = normalized == null ? null : normalized.getParent();
+        return search(path, parent, filter, resultLimit, cancelled);
+    }
+
+    public static SearchResult search(
+            Path path,
+            Path allowedRoot,
+            LogFilter filter,
+            int resultLimit,
+            BooleanSupplier cancelled) {
         Objects.requireNonNull(filter, "filter");
         int retentionLimit = Math.max(0, resultLimit);
         ArrayDeque<LogEntry> newestMatches = new ArrayDeque<>(Math.max(1, retentionLimit));
@@ -66,7 +77,7 @@ public final class HytaleLogReader {
         long[] totalMatches = {0};
         ParsedRecord[] pending = {null};
 
-        try (var reader = openLog(path)) {
+        try (var reader = openLog(path, allowedRoot)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (isCancelled(cancelled)) {
@@ -130,8 +141,15 @@ public final class HytaleLogReader {
                 matcher.group("message"));
     }
 
-    private static BufferedReader openLog(Path path) throws IOException {
+    private static BufferedReader openLog(Path path, Path allowedRoot) throws IOException {
+        if (allowedRoot == null) {
+            throw new IOException("No allowed log root was supplied");
+        }
+        Path canonicalRoot = allowedRoot.toRealPath();
         Path canonical = path.toRealPath();
+        if (!canonical.startsWith(canonicalRoot)) {
+            throw new IOException("Log path is outside the allowed root");
+        }
         String fileName = canonical.getFileName() == null
                 ? ""
                 : canonical.getFileName().toString().toLowerCase(Locale.ROOT);

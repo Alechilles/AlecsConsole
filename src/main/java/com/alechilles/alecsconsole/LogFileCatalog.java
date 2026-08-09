@@ -25,7 +25,14 @@ public final class LogFileCatalog {
         CLIENT
     }
 
-    public record Option(String id, Source source, String displayName, Path path) {
+    public record Option(String id, Source source, String displayName, Path path, Path allowedRoot) {
+        public Option(String id, Source source, String displayName, Path path) {
+            this(id, source, displayName, path, defaultAllowedRoot(path));
+        }
+
+        private static Path defaultAllowedRoot(Path path) {
+            return path == null ? null : path.toAbsolutePath().normalize().getParent();
+        }
     }
 
     private final Path serverRoot;
@@ -53,12 +60,12 @@ public final class LogFileCatalog {
         for (Candidate candidate : serverFiles) {
             Source source = currentAssigned ? Source.PREVIOUS_SERVER : Source.CURRENT_SERVER;
             currentAssigned = true;
-            addOption(candidate, source, "server");
+            addOption(candidate, source, "server", serverRoot);
         }
 
         for (Root root : clientRoots) {
             for (Candidate candidate : enumerate(root.path, false)) {
-                addOption(candidate, Source.CLIENT, root.id);
+                addOption(candidate, Source.CLIENT, root.id, root.path);
             }
         }
         return List.copyOf(options.values());
@@ -72,7 +79,10 @@ public final class LogFileCatalog {
         if (option == null) {
             return Optional.empty();
         }
-        Path root = rootFor(option);
+        Path root = option.allowedRoot();
+        if (root == null) {
+            root = rootFor(option);
+        }
         if (root == null) {
             options.remove(id);
             return Optional.empty();
@@ -82,16 +92,16 @@ public final class LogFileCatalog {
             options.remove(id);
             return Optional.empty();
         }
-        Option verified = new Option(option.id(), option.source(), option.displayName(), candidate);
+        Option verified = new Option(option.id(), option.source(), option.displayName(), candidate, root);
         options.put(id, verified);
         return Optional.of(verified);
     }
 
-    private void addOption(Candidate candidate, Source source, String rootId) {
+    private void addOption(Candidate candidate, Source source, String rootId, Path allowedRoot) {
         String relativeName = candidate.relative.toString().replace('\\', '/');
         String id = source.name() + ":" + rootId + ":" + relativeName;
         String displayName = sourceLabel(source) + " · " + relativeName;
-        options.put(id, new Option(id, source, displayName, candidate.path));
+        options.put(id, new Option(id, source, displayName, candidate.path, allowedRoot));
     }
 
     private Path rootFor(Option option) {

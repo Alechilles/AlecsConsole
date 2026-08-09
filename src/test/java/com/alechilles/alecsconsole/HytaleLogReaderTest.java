@@ -156,4 +156,20 @@ class HytaleLogReaderTest {
     void malformedConfiguredClientDirectoryDisablesOnlyThatRoot() {
         assertDoesNotThrow(() -> new LogFileCatalog("\u0000"));
     }
+
+    @Test
+    void rejectsAReadableLogOutsideTheSuppliedAllowedRoot() throws IOException {
+        Path allowedRoot = tempDir.resolve("allowed");
+        Files.createDirectories(allowedRoot);
+        Path outside = tempDir.resolve("outside.log");
+        Files.writeString(outside, "[2026/08/09 04:23:03 INFO] [NPC] outside\n",
+                StandardCharsets.UTF_8);
+
+        HytaleLogReader.SearchResult result = HytaleLogReader.search(outside, allowedRoot,
+                new LogFilter(Level.ALL.intValue(), LogFilter.ALL_LOGGERS, "outside"), 10, () -> false);
+
+        assertEquals(HytaleLogReader.Status.FAILED, result.status());
+        assertTrue(result.detail().toLowerCase().contains("allowed"));
+        assertEquals(0, result.totalMatches());
+    }
 }
