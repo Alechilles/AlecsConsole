@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+    id 'com.azuredoom.hytale-tools' version '1.0.46'
+}
+
+group = 'com.alechilles'
+version = providers.gradleProperty('mod_version').get()
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+hytaleTools {
+    hytaleVersion = providers.gradleProperty('hytale_version').get()
+    patchline = providers.gradleProperty('hytale_patchline').get()
+    manifestServerVersion = '0.5.x'
+    manifestGroup = 'Alechilles'
+    modId = "Alec's Console"
+    modDescription = 'A responsive in-game viewer for live and historical Hytale logs.'
+    modCredits = 'Alec (Alechilles)||https://www.curseforge.com/members/alechilles/projects'
+    mainClass = 'com.alechilles.alecsconsole.AlecsConsolePlugin'
+    includesPack = true
+    bundleAssetEditorRuntime = false
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+configurations.named('testImplementation') {
+    extendsFrom(configurations.compileOnly)
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    workingDir projectDir
+    systemProperty 'java.util.logging.manager', 'com.hypixel.hytale.logger.backend.HytaleLogManager'
+}

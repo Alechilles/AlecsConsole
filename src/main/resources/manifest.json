@@ -1,0 +1,26 @@
+{
+    "Group": "Alechilles",
+    "Name": "Alec's Console",
+    "Version": "0.1.0",
+    "Description": "A responsive in-game viewer for live and historical Hytale logs.",
+    "Authors": [
+        {
+            "Name": "Alec (Alechilles)",
+            "Url": "https://www.curseforge.com/members/alechilles/projects"
+        }
+    ],
+    "Website": "",
+    "ServerVersion": "0.5.x",
+    "Dependencies": {
+        "Hytale:AssetModule": "*"
+    },
+    "OptionalDependencies": {
+
+    },
+    "DisabledByDefault": false,
+    "Main": "com.alechilles.alecsconsole.AlecsConsolePlugin",
+    "IncludesAssetPack": true,
+    "UpdateChecker": {
+        "CurseForge": ""
+    }
+}
