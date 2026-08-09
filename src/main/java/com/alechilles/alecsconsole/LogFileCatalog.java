@@ -12,10 +12,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.PriorityQueue;
 
 /** Inventory of the explicitly allowed local server and client log roots. */
 public final class LogFileCatalog {
     private static final String APPDATA = "APPDATA";
+    private static final int MAX_FILES_PER_ROOT = 250;
 
     public enum Source {
         CURRENT_SERVER,
@@ -45,10 +47,7 @@ public final class LogFileCatalog {
 
     public synchronized List<Option> refresh() {
         options.clear();
-        List<Candidate> serverFiles = enumerate(serverRoot).stream()
-                .filter(candidate -> isServerLog(candidate.path))
-                .toList();
-        serverFiles.sort(Candidate.NEWEST_FIRST);
+        List<Candidate> serverFiles = enumerate(serverRoot, true);
 
         boolean currentAssigned = false;
         for (Candidate candidate : serverFiles) {
@@ -58,9 +57,7 @@ public final class LogFileCatalog {
         }
 
         for (Root root : clientRoots) {
-            List<Candidate> clientFiles = enumerate(root.path);
-            clientFiles.sort(Candidate.NEWEST_FIRST);
-            for (Candidate candidate : clientFiles) {
+            for (Candidate candidate : enumerate(root.path, false)) {
                 addOption(candidate, Source.CLIENT, root.id);
             }
         }
@@ -117,7 +114,7 @@ public final class LogFileCatalog {
         };
     }
 
-    private static List<Candidate> enumerate(Path root) {
+    private static List<Candidate> enumerate(Path root, boolean serverOnly) {
         Path rootReal;
         try {
             rootReal = root.toRealPath();
@@ -125,16 +122,28 @@ public final class LogFileCatalog {
             return List.of();
         }
 
+        PriorityQueue<Candidate> newest = new PriorityQueue<>(MAX_FILES_PER_ROOT, Candidate.OLDEST_FIRST);
         try (var stream = Files.list(rootReal)) {
-            return stream
+            stream
                     .filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
                     .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".log"))
+                    .filter(path -> !serverOnly || isServerLog(path))
                     .map(path -> candidate(path, rootReal))
                     .filter(Objects::nonNull)
-                    .toList();
+                    .forEach(candidate -> {
+                        if (newest.size() < MAX_FILES_PER_ROOT) {
+                            newest.add(candidate);
+                        } else if (Candidate.NEWEST_FIRST.compare(candidate, newest.peek()) < 0) {
+                            newest.poll();
+                            newest.add(candidate);
+                        }
+                    });
         } catch (IOException exception) {
             return List.of();
         }
+        ArrayList<Candidate> result = new ArrayList<>(newest);
+        result.sort(Candidate.NEWEST_FIRST);
+        return result;
     }
 
     private static boolean isServerLog(Path path) {
@@ -173,7 +182,11 @@ public final class LogFileCatalog {
             roots.add(new Root("pre-release", appDataRoot.resolve("Hytale/data/pre-release/Logs").normalize()));
         }
         if (configuredClientDirectory != null && !configuredClientDirectory.isBlank()) {
-            roots.add(new Root("configured", Path.of(configuredClientDirectory).toAbsolutePath().normalize()));
+            try {
+                roots.add(new Root("configured", Path.of(configuredClientDirectory).toAbsolutePath().normalize()));
+            } catch (RuntimeException ignored) {
+                // A malformed optional root disables only that root.
+            }
         }
         return List.copyOf(roots);
     }
@@ -185,5 +198,6 @@ public final class LogFileCatalog {
         private static final Comparator<Candidate> NEWEST_FIRST = Comparator
                 .comparingLong(Candidate::lastModified).reversed()
                 .thenComparing(candidate -> candidate.path.getFileName().toString());
+        private static final Comparator<Candidate> OLDEST_FIRST = NEWEST_FIRST.reversed();
     }
 }

@@ -1,9 +1,13 @@
 package com.alechilles.alecsconsole;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -21,6 +25,8 @@ import java.util.logging.Level;
 
 /** Streaming parser for Hytale's UTF-8 server log format. */
 public final class HytaleLogReader {
+    private static final int MAX_PENDING_TEXT_CHARS = 200_000;
+    private static final String TRUNCATION_MARKER = "\n[truncated]";
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
     private static final Pattern PREFIX = Pattern.compile(
@@ -60,7 +66,7 @@ public final class HytaleLogReader {
         long[] totalMatches = {0};
         ParsedRecord[] pending = {null};
 
-        try (var reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+        try (var reader = openLog(path)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (isCancelled(cancelled)) {
@@ -69,13 +75,20 @@ public final class HytaleLogReader {
 
                 Matcher matcher = PREFIX.matcher(line);
                 if (matcher.matches()) {
-                    if (pending[0] != null) {
-                        appendMatch(pending[0], filter, retentionLimit, newestMatches,
-                                sequence, totalMatches);
+                    ParsedRecord parsed = parse(matcher);
+                    if (parsed != null) {
+                        if (pending[0] != null) {
+                            appendMatch(pending[0], filter, retentionLimit, newestMatches,
+                                    sequence, totalMatches);
+                        }
+                        pending[0] = parsed;
+                    } else {
+                        appendRawLine(pending, line);
                     }
-                    pending[0] = parse(matcher);
                 } else if (pending[0] != null) {
-                    pending[0].message.append('\n').append(line);
+                    pending[0].appendLine(line);
+                } else {
+                    appendRawLine(pending, line);
                 }
             }
 
@@ -108,10 +121,34 @@ public final class HytaleLogReader {
             epochMillis = LocalDateTime.parse(timestamp, TIMESTAMP_FORMAT)
                     .toInstant(ZoneOffset.UTC).toEpochMilli();
         } catch (DateTimeParseException exception) {
-            return new ParsedRecord(0, "", "", new StringBuilder(matcher.group("message")));
+            return null;
         }
-        return new ParsedRecord(epochMillis, matcher.group("level").trim(),
-                matcher.group("logger"), new StringBuilder(matcher.group("message")));
+        String levelName = matcher.group("level").trim();
+        String loggerName = matcher.group("logger");
+        String prefixText = timestamp + " " + levelName + " [" + loggerName + "]";
+        return new ParsedRecord(epochMillis, levelName, loggerName, prefixText,
+                matcher.group("message"));
+    }
+
+    private static BufferedReader openLog(Path path) throws IOException {
+        Path canonical = path.toRealPath();
+        String fileName = canonical.getFileName() == null
+                ? ""
+                : canonical.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (!fileName.endsWith(".log")) {
+            throw new IOException("Only .log files can be searched");
+        }
+        return new BufferedReader(new InputStreamReader(
+                Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
+                StandardCharsets.UTF_8));
+    }
+
+    private static void appendRawLine(ParsedRecord[] pending, String line) {
+        if (pending[0] == null) {
+            pending[0] = new ParsedRecord(0, "", "", "", line);
+        } else {
+            pending[0].appendLine(line);
+        }
     }
 
     private static void appendMatch(
@@ -126,7 +163,8 @@ public final class HytaleLogReader {
         int levelValue = levelValue(levelName);
         String loggerName = parsed.loggerName;
         String message = parsed.message.toString();
-        String searchText = (parsed.epochMillis + " " + levelName + " " + loggerName + " " + message)
+        String searchText = (parsed.prefixText + " " + parsed.epochMillis + " " + levelName + " "
+                + loggerName + " " + message)
                 .toLowerCase(Locale.ROOT);
         LogEntry entry = new LogEntry(nextSequence, parsed.epochMillis, levelValue,
                 levelName, loggerName, message, searchText);
@@ -168,13 +206,38 @@ public final class HytaleLogReader {
         private final long epochMillis;
         private final String levelName;
         private final String loggerName;
-        private final StringBuilder message;
+        private final String prefixText;
+        private final StringBuilder message = new StringBuilder();
+        private boolean truncated;
 
-        private ParsedRecord(long epochMillis, String levelName, String loggerName, StringBuilder message) {
+        private ParsedRecord(long epochMillis, String levelName, String loggerName,
+                             String prefixText, String message) {
             this.epochMillis = epochMillis;
             this.levelName = levelName;
             this.loggerName = loggerName;
-            this.message = message;
+            this.prefixText = prefixText;
+            appendText(message);
+        }
+
+        private void appendLine(String line) {
+            appendText("\n");
+            appendText(line);
+        }
+
+        private void appendText(String text) {
+            if (truncated || text == null || text.isEmpty()) {
+                return;
+            }
+            int remaining = MAX_PENDING_TEXT_CHARS - message.length();
+            if (text.length() <= remaining) {
+                message.append(text);
+                return;
+            }
+            if (remaining > 0) {
+                message.append(text, 0, remaining);
+            }
+            message.append(TRUNCATION_MARKER);
+            truncated = true;
         }
     }
 }
