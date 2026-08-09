@@ -9,11 +9,11 @@ public final class ConsoleEventData {
             .builder(ConsoleEventData.class, ConsoleEventData::new)
             .addField(new KeyedCodec<>("Action", BuilderCodec.STRING),
                     (data, value) -> data.action = value, data -> data.action)
-            .addField(new KeyedCodec<>("Value", BuilderCodec.STRING),
+            .addField(new KeyedCodec<>("@Value", BuilderCodec.STRING),
                     (data, value) -> data.value = value, data -> data.value)
             .addField(new KeyedCodec<>("RowSequence", BuilderCodec.STRING),
                     (data, value) -> data.rowSequence = value, data -> data.rowSequence)
-            .addField(new KeyedCodec<>("CatalogId", BuilderCodec.STRING),
+            .addField(new KeyedCodec<>("@CatalogId", BuilderCodec.STRING),
                     (data, value) -> data.catalogId = value, data -> data.catalogId)
             .build();
 

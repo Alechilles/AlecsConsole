@@ -12,11 +12,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Owns the small amount of background work shared by open console pages. */
@@ -24,20 +26,28 @@ public final class ConsolePageManager implements AutoCloseable {
     private final LiveLogStore liveStore;
     private final AlecsConsoleConfig config;
     private final LogFileCatalog catalog;
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread thread = new Thread(r, "alecs-console-live");
-        thread.setDaemon(true);
-        return thread;
-    });
-    private final ExecutorService fileExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "alecs-console-files");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final ScheduledThreadPoolExecutor scheduler = createScheduler();
+    private final ThreadPoolExecutor fileExecutor = new ThreadPoolExecutor(1, 1, 0,
+            TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16), r -> {
+                Thread thread = new Thread(r, "alecs-console-files");
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.DiscardOldestPolicy());
     private final Set<ConsolePage> pages = ConcurrentHashMap.newKeySet();
     private final Map<ConsolePage, ScheduledFuture<?>> debounceTasks = new ConcurrentHashMap<>();
+    private final Map<ConsolePage, Future<?>> fileTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
     private ScheduledFuture<?> liveTask;
+
+    private static ScheduledThreadPoolExecutor createScheduler() {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, r -> {
+            Thread thread = new Thread(r, "alecs-console-live");
+            thread.setDaemon(true);
+            return thread;
+        });
+        executor.setRemoveOnCancelPolicy(true);
+        return executor;
+    }
 
     public ConsolePageManager(LiveLogStore liveStore, AlecsConsoleConfig config, LogFileCatalog catalog) {
         this.liveStore = liveStore;
@@ -84,22 +94,21 @@ public final class ConsolePageManager implements AutoCloseable {
         if (debounce != null) {
             debounce.cancel(false);
         }
+        cancelFileWork(page);
         page.cancelPendingWork();
     }
 
     void scheduleDebounce(ConsolePage page, long generation) {
         ScheduledFuture<?> previous = debounceTasks.put(page,
-                scheduler.schedule(() -> {
-                    debounceTasks.remove(page);
-                    page.applyDebouncedText(generation);
-                }, config.getSearchDebounceMs(), TimeUnit.MILLISECONDS));
+                scheduler.schedule(() -> page.applyDebouncedText(generation),
+                        config.getSearchDebounceMs(), TimeUnit.MILLISECONDS));
         if (previous != null) {
             previous.cancel(false);
         }
     }
 
     void submitFileSearch(ConsolePage page, String catalogId, LogFilter filter, long generation) {
-        fileExecutor.execute(() -> {
+        submitFileWork(page, () -> {
             LogFileCatalog.Option option = catalog.resolve(catalogId).orElse(null);
             HytaleLogReader.SearchResult result = option == null
                     ? new HytaleLogReader.SearchResult(List.of(), 0, false,
@@ -115,7 +124,33 @@ public final class ConsolePageManager implements AutoCloseable {
     }
 
     void refreshFiles(ConsolePage page) {
-        fileExecutor.execute(() -> page.applyFileOptions(refreshFiles()));
+        submitFileWork(page, () -> page.applyFileOptions(refreshFiles()));
+    }
+
+    void cancelFileWork(ConsolePage page) {
+        Future<?> task = fileTasks.remove(page);
+        if (task != null) {
+            task.cancel(true);
+            fileExecutor.purge();
+        }
+    }
+
+    private void submitFileWork(ConsolePage page, Runnable work) {
+        if (closed.get()) {
+            return;
+        }
+        cancelFileWork(page);
+        FutureTask<Void> task = new FutureTask<>(() -> {
+            work.run();
+            return null;
+        }) {
+            @Override
+            protected void done() {
+                fileTasks.remove(page, this);
+            }
+        };
+        fileTasks.put(page, task);
+        fileExecutor.execute(task);
     }
 
     private void flushPages() {
@@ -143,13 +178,17 @@ public final class ConsolePageManager implements AutoCloseable {
             }
         }
         for (ConsolePage page : pages) {
-            page.cancelPendingWork();
+            page.closePage();
         }
         pages.clear();
         for (ScheduledFuture<?> task : debounceTasks.values()) {
             task.cancel(false);
         }
         debounceTasks.clear();
+        for (Future<?> task : fileTasks.values()) {
+            task.cancel(true);
+        }
+        fileTasks.clear();
         scheduler.shutdownNow();
         fileExecutor.shutdownNow();
     }

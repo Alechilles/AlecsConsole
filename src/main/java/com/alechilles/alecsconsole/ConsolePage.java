@@ -2,9 +2,11 @@ package com.alechilles.alecsconsole;
 
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.protocol.packets.interface_.CustomPage;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
+import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.ui.DropdownEntryInfo;
 import com.hypixel.hytale.server.core.ui.LocalizableString;
 import com.hypixel.hytale.server.core.ui.builder.EventData;
@@ -18,6 +20,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +38,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private static final String CLIENT = "CLIENT";
     private static final int MAX_SELECTED_ROWS = 200;
     private static final int MAX_SELECTED_CHARS = 20_000;
+    private static final int MAX_LOGGER_CHOICES = 250;
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
             .withZone(ZoneId.systemDefault());
 
@@ -42,6 +47,8 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private final AlecsConsoleConfig config;
     private final Map<Long, LogEntry> renderedRows = new LinkedHashMap<>();
     private final LinkedHashMap<Long, LogEntry> selectedRows = new LinkedHashMap<>();
+    private final ArrayDeque<LogEntry> liveMatches = new ArrayDeque<>();
+    private final Set<String> liveLoggerNames = new TreeSet<>();
     private List<LogFileCatalog.Option> fileOptions;
     private List<LogEntry> historicalRows = List.of();
     private List<LogEntry> pausedSnapshot = List.of();
@@ -50,14 +57,17 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private String logger = LogFilter.ALL_LOGGERS;
     private int minimumLevel = Integer.MIN_VALUE;
     private String searchText = "";
+    private String pendingSearchText = "";
     private boolean paused;
     private boolean multiSelect;
-    private boolean canceled;
+    private volatile boolean canceled;
+    private boolean selectionTruncated;
     private long lastDeliveredSequence;
     private long unseen;
     private long debounceGeneration;
     private long searchGeneration;
     private int pageIndex;
+    private int displayedRowCount;
     private String status = "Live";
 
     ConsolePage(PlayerRef playerRef, ConsolePageManager manager, LiveLogStore liveStore,
@@ -76,13 +86,39 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         commands.append(LAYOUT);
         bindStaticEvents(events);
         commands.set("#SearchText.Value", searchText);
+        List<LogEntry> rows = rebuildLiveRows();
         setControlState(commands);
-        renderRows(commands, events, liveRows());
+        renderRows(commands, events, rows);
     }
 
     @Override
     public void onDismiss(@Nonnull Ref<EntityStore> ref, @Nonnull Store<EntityStore> store) {
         manager.pageDismissed(this);
+    }
+
+    @Override
+    protected void sendUpdate(UICommandBuilder commands, UIEventBuilder events, boolean clear) {
+        if (canceled) {
+            return;
+        }
+        Ref<EntityStore> ref = playerRef.getReference();
+        if (ref == null) {
+            return;
+        }
+        Store<EntityStore> store = ref.getStore();
+        store.getExternalData().getWorld().execute(() -> {
+            if (canceled || !ref.isValid()) {
+                return;
+            }
+            Player player = store.getComponent(ref, Player.getComponentType());
+            if (player == null || player.getPageManager().getCustomPage() != this) {
+                return;
+            }
+            player.getPageManager().updateCustomPage(new CustomPage(
+                    getClass().getName(), false, clear, lifetime,
+                    commands == null ? UICommandBuilder.EMPTY_COMMAND_ARRAY : commands.getCommands(),
+                    events == null ? UIEventBuilder.EMPTY_EVENT_BINDING_ARRAY : events.getEvents()));
+        });
     }
 
     @Override
@@ -96,9 +132,12 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         switch (action) {
             case SourceChanged -> changeSource(data.value());
             case FileChanged -> {
+                invalidateHistoricalWork();
                 catalogId = data.catalogId() == null ? data.value() : data.catalogId();
                 historicalRows = List.of();
                 selectedRows.clear();
+                selectionTruncated = false;
+                displayedRowCount = 0;
                 pageIndex = 0;
                 status = "Ready to search";
                 updateRowsAndControls(List.of());
@@ -112,11 +151,17 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
                 refreshForFilterChange();
             }
             case SearchTextChanged -> {
-                searchText = data.value() == null ? "" : data.value();
+                pendingSearchText = data.value() == null ? "" : data.value();
                 long generation = ++debounceGeneration;
                 manager.scheduleDebounce(this, generation);
             }
-            case SearchSubmitted -> submitHistoricalSearch();
+            case SearchSubmitted -> {
+                if (data.value() != null) {
+                    pendingSearchText = data.value();
+                }
+                searchText = pendingSearchText;
+                submitHistoricalSearch();
+            }
             case PauseToggled -> togglePause();
             case MultiSelectToggled -> {
                 multiSelect = !multiSelect;
@@ -125,6 +170,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             case RowSelected -> selectRow(data.parsedRowSequence());
             case ClearSelection -> {
                 selectedRows.clear();
+                selectionTruncated = false;
                 updateRowsAndControls(currentRows());
             }
             case PreviousPage -> changePage(-1);
@@ -137,12 +183,13 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         if (canceled || !LIVE.equals(source)) {
             return;
         }
-        long latest = liveStore.latestSequence();
-        if (latest <= lastDeliveredSequence) {
+        List<LogEntry> incoming = liveStore.snapshotAfter(lastDeliveredSequence, config.getLiveCapacity());
+        if (incoming.isEmpty()) {
             return;
         }
+        long latest = incoming.get(incoming.size() - 1).sequence();
         if (paused) {
-            unseen += latest - lastDeliveredSequence;
+            unseen += incoming.size();
             lastDeliveredSequence = latest;
             updateControlsOnly();
             return;
@@ -150,15 +197,27 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         lastDeliveredSequence = latest;
         unseen = 0;
         pageIndex = 0;
-        updateRowsAndControls(liveRows());
+        LogFilter activeFilter = filter();
+        for (LogEntry entry : incoming) {
+            rememberLogger(entry.loggerName());
+            if (activeFilter.matches(entry)) {
+                liveMatches.addFirst(entry);
+                while (liveMatches.size() > config.getLiveCapacity()) {
+                    liveMatches.removeLast();
+                }
+            }
+        }
+        displayedRowCount = liveMatches.size();
+        updateRowsAndControls(page(new ArrayList<>(liveMatches)));
     }
 
     public synchronized void applyDebouncedText(long generation) {
         if (canceled || generation != debounceGeneration || !LIVE.equals(source)) {
             return;
         }
+        searchText = pendingSearchText;
         pageIndex = 0;
-        updateRowsAndControls(liveRows());
+        updateRowsAndControls(rebuildLiveRows());
     }
 
     public synchronized void applySearchResult(long generation, HytaleLogReader.SearchResult result) {
@@ -166,6 +225,9 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             return;
         }
         historicalRows = result.newestFirst();
+        selectedRows.clear();
+        selectionTruncated = false;
+        displayedRowCount = historicalRows.size();
         pageIndex = 0;
         status = switch (result.status()) {
             case COMPLETE -> result.capped()
@@ -181,8 +243,16 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         if (canceled) {
             return;
         }
+        String previousCatalogId = catalogId;
         fileOptions = List.copyOf(options);
         chooseFirstFile();
+        if (!java.util.Objects.equals(previousCatalogId, catalogId)) {
+            searchGeneration++;
+            historicalRows = List.of();
+            selectedRows.clear();
+            selectionTruncated = false;
+            displayedRowCount = 0;
+        }
         status = "Files refreshed";
         updateControlsOnly();
     }
@@ -193,6 +263,26 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         searchGeneration++;
         renderedRows.clear();
         selectedRows.clear();
+        liveMatches.clear();
+        pausedSnapshot = List.of();
+    }
+
+    void closePage() {
+        cancelPendingWork();
+        Ref<EntityStore> ref = playerRef.getReference();
+        if (ref == null) {
+            return;
+        }
+        Store<EntityStore> store = ref.getStore();
+        store.getExternalData().getWorld().execute(() -> {
+            if (!ref.isValid()) {
+                return;
+            }
+            Player player = store.getComponent(ref, Player.getComponentType());
+            if (player != null && player.getPageManager().getCustomPage() == this) {
+                close();
+            }
+        });
     }
 
     synchronized boolean isSearchCurrent(long generation) {
@@ -200,6 +290,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     }
 
     private void changeSource(String value) {
+        invalidateHistoricalWork();
         source = switch (value == null ? "" : value) {
             case SERVER -> SERVER;
             case CLIENT -> CLIENT;
@@ -208,18 +299,31 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         pageIndex = 0;
         historicalRows = List.of();
         pausedSnapshot = List.of();
+        paused = false;
+        unseen = 0;
         selectedRows.clear();
+        selectionTruncated = false;
         status = LIVE.equals(source) ? "Live" : "Choose a file, then Search";
         chooseFirstFile();
-        updateRowsAndControls(currentRows());
+        if (LIVE.equals(source)) {
+            updateRowsAndControls(rebuildLiveRows());
+        } else {
+            displayedRowCount = 0;
+            if (fileOptions.isEmpty()) {
+                status = "Refreshing files…";
+                manager.refreshFiles(this);
+            }
+            updateRowsAndControls(List.of());
+        }
     }
 
     private void refreshForFilterChange() {
         pageIndex = 0;
         if (LIVE.equals(source)) {
-            updateRowsAndControls(liveRows());
+            updateRowsAndControls(rebuildLiveRows());
         } else {
-            submitHistoricalSearch();
+            status = "Filters changed · Search to apply";
+            updateControlsOnly();
         }
     }
 
@@ -247,13 +351,15 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         paused = !paused;
         if (paused) {
             pausedSnapshot = liveStore.snapshotNewest(config.getLiveCapacity());
+            lastDeliveredSequence = pausedSnapshot.isEmpty()
+                    ? liveStore.latestSequence()
+                    : pausedSnapshot.get(pausedSnapshot.size() - 1).sequence();
             updateControlsOnly();
         } else {
             pausedSnapshot = List.of();
-            lastDeliveredSequence = liveStore.latestSequence();
             unseen = 0;
             pageIndex = 0;
-            updateRowsAndControls(liveRows());
+            updateRowsAndControls(rebuildLiveRows());
         }
     }
 
@@ -268,22 +374,30 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         if (!multiSelect) {
             selectedRows.clear();
             selectedRows.put(sequence, entry);
+            selectionTruncated = false;
         } else if (selectedRows.containsKey(sequence)) {
             selectedRows.remove(sequence);
+            if (selectedRows.size() < MAX_SELECTED_ROWS) {
+                selectionTruncated = false;
+            }
         } else if (selectedRows.size() < MAX_SELECTED_ROWS) {
             selectedRows.put(sequence, entry);
+        } else {
+            selectionTruncated = true;
         }
         updateRowsAndControls(currentRows());
     }
 
     private void changePage(int delta) {
-        List<LogEntry> rows = LIVE.equals(source) ? filteredLiveRows() : historicalRows;
+        List<LogEntry> rows = LIVE.equals(source) ? new ArrayList<>(liveMatches) : historicalRows;
+        displayedRowCount = rows.size();
         int pageCount = pageCount(rows.size());
         pageIndex = Math.max(0, Math.min(Math.max(0, pageCount - 1), pageIndex + delta));
         updateRowsAndControls(page(rows));
     }
 
     private void refreshFiles() {
+        invalidateHistoricalWork();
         status = "Refreshing files…";
         updateControlsOnly();
         manager.refreshFiles(this);
@@ -302,22 +416,40 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     }
 
     private List<LogEntry> liveRows() {
-        return page(filteredLiveRows());
+        displayedRowCount = liveMatches.size();
+        return page(new ArrayList<>(liveMatches));
     }
 
-    private List<LogEntry> filteredLiveRows() {
+    private List<LogEntry> rebuildLiveRows() {
         List<LogEntry> snapshot = paused
                 ? pausedSnapshot
                 : liveStore.snapshotNewest(config.getLiveCapacity());
-        ArrayList<LogEntry> matches = new ArrayList<>();
+        liveMatches.clear();
+        liveLoggerNames.clear();
         LogFilter filter = filter();
         for (int index = snapshot.size() - 1; index >= 0; index--) {
             LogEntry entry = snapshot.get(index);
+            rememberLogger(entry.loggerName());
             if (filter.matches(entry)) {
-                matches.add(entry);
+                liveMatches.addLast(entry);
             }
         }
-        return matches;
+        if (!snapshot.isEmpty()) {
+            lastDeliveredSequence = snapshot.get(snapshot.size() - 1).sequence();
+        }
+        displayedRowCount = liveMatches.size();
+        return page(new ArrayList<>(liveMatches));
+    }
+
+    private void rememberLogger(String name) {
+        if (liveLoggerNames.size() < MAX_LOGGER_CHOICES || liveLoggerNames.contains(name)) {
+            liveLoggerNames.add(name);
+        }
+    }
+
+    private void invalidateHistoricalWork() {
+        searchGeneration++;
+        manager.cancelFileWork(this);
     }
 
     private List<LogEntry> page(List<LogEntry> rows) {
@@ -360,9 +492,9 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         commands.set("#Pause.Text", paused ? "Follow" : "Pause");
         commands.set("#MultiSelect.Text", multiSelect ? "Multi: on" : "Multi: off");
         commands.set("#Status.Text", liveStatus());
-        commands.set("#Page.Text", "Page " + (pageIndex + 1) + " / " + pageCount(currentRowCount()));
+        commands.set("#Page.Text", "Page " + (pageIndex + 1) + " / " + pageCount(displayedRowCount));
         commands.set("#Previous.Disabled", pageIndex <= 0);
-        commands.set("#Next.Disabled", pageIndex + 1 >= pageCount(currentRowCount()));
+        commands.set("#Next.Disabled", pageIndex + 1 >= pageCount(displayedRowCount));
         commands.set("#Selected.Value", selectedText());
     }
 
@@ -371,10 +503,6 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             return paused && unseen > 0 ? "Paused · " + unseen + " new" : paused ? "Paused" : "Live";
         }
         return status;
-    }
-
-    private int currentRowCount() {
-        return LIVE.equals(source) ? filteredLiveRows().size() : historicalRows.size();
     }
 
     private void renderRows(UICommandBuilder commands, UIEventBuilder events, List<LogEntry> rows) {
@@ -392,7 +520,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             commands.set(row + "#Level.Style.TextColor", levelColor(entry.levelValue()));
             commands.set(row + "#Message.Style.TextColor", levelColor(entry.levelValue()));
             commands.set(row + "#Selection.Visible", selectedRows.containsKey(entry.sequence()));
-            events.addEventBinding(CustomUIEventBindingType.Activating, row + "#SelectButton",
+            events.addEventBinding(CustomUIEventBindingType.Activating, "#Rows[" + index + "]",
                     new EventData().append("Action", "RowSelected")
                             .append("RowSequence", Long.toString(entry.sequence())), false);
         }
@@ -404,7 +532,8 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         bindValue(events, "#Level", "LevelChanged", "Value");
         bindValue(events, "#Logger", "LoggerChanged", "Value");
         bindValue(events, "#SearchText", "SearchTextChanged", "Value");
-        bindAction(events, "#Search", "SearchSubmitted");
+        bindSubmit(events, CustomUIEventBindingType.Activating, "#Search");
+        bindSubmit(events, CustomUIEventBindingType.Validating, "#SearchText");
         bindAction(events, "#Pause", "PauseToggled");
         bindAction(events, "#MultiSelect", "MultiSelectToggled");
         bindAction(events, "#ClearSelection", "ClearSelection");
@@ -415,7 +544,13 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
 
     private static void bindValue(UIEventBuilder events, String selector, String action, String key) {
         events.addEventBinding(CustomUIEventBindingType.ValueChanged, selector,
-                new EventData().append("Action", action).append(key, selector + ".Value"), false);
+                new EventData().append("Action", action).append("@" + key, selector + ".Value"), false);
+    }
+
+    private static void bindSubmit(UIEventBuilder events, CustomUIEventBindingType type, String selector) {
+        events.addEventBinding(type, selector,
+                new EventData().append("Action", "SearchSubmitted")
+                        .append("@Value", "#SearchText.Value"), false);
     }
 
     private static void bindAction(UIEventBuilder events, String selector, String action) {
@@ -453,11 +588,12 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
 
     private List<DropdownEntryInfo> loggerEntries() {
         Set<String> names = new TreeSet<>();
-        List<LogEntry> sourceRows = LIVE.equals(source)
-                ? liveStore.snapshotNewest(config.getLiveCapacity())
-                : historicalRows;
-        for (LogEntry entry : sourceRows) {
-            names.add(entry.loggerName());
+        if (LIVE.equals(source)) {
+            names.addAll(liveLoggerNames);
+        } else {
+            for (LogEntry entry : historicalRows) {
+                names.add(entry.loggerName());
+            }
         }
         names.add(logger);
         ArrayList<DropdownEntryInfo> entries = new ArrayList<>(names.size() + 1);
@@ -473,7 +609,9 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private String selectedText() {
         StringBuilder text = new StringBuilder();
         int count = 0;
-        for (LogEntry entry : selectedRows.values()) {
+        List<LogEntry> displayOrder = new ArrayList<>(selectedRows.values());
+        displayOrder.sort(Comparator.comparingLong(LogEntry::sequence).reversed());
+        for (LogEntry entry : displayOrder) {
             String line = fullText(entry);
             if (count >= MAX_SELECTED_ROWS || text.length() + line.length() + 1 > MAX_SELECTED_CHARS) {
                 if (!text.isEmpty()) {
@@ -487,6 +625,12 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             }
             text.append(line);
             count++;
+        }
+        if (selectionTruncated && !text.toString().contains("selection truncated")) {
+            if (!text.isEmpty()) {
+                text.append('\n');
+            }
+            text.append("… (selection truncated)");
         }
         return text.toString();
     }
