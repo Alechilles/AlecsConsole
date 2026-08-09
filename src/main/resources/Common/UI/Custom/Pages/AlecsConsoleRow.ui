@@ -1,0 +1,43 @@
+Button #SelectButton {
+  Anchor: (Left: 0, Right: 0, Height: 24);
+  Padding: (Right: 4, Top: 2, Bottom: 2);
+  LayoutMode: Left;
+  Background: (Color: #000000(0.0));
+  Style: (
+    Hovered: (Background: #1a2230(0.6)),
+    Pressed: (Background: #1f2a3a(0.8))
+  );
+
+  Group #Selection {
+    Anchor: (Width: 4, Top: 0, Bottom: 0);
+    Background: (Color: #4da3ff(0.9));
+    Visible: false;
+  }
+
+  Group { Anchor: (Width: 4); }
+
+  Label #Timestamp {
+    Text: "";
+    Anchor: (Width: 72);
+    Style: (TextColor: #8fa2b7, FontSize: 12, FontName: "Secondary");
+  }
+
+  Label #Level {
+    Text: "";
+    Anchor: (Width: 78);
+    Style: (TextColor: #e6e6e6, FontSize: 12, FontName: "Secondary");
+  }
+
+  Label #Logger {
+    Text: "";
+    Anchor: (Width: 180);
+    Style: (TextColor: #b794f4, FontSize: 12, FontName: "Secondary");
+  }
+
+  Label #Message {
+    Text: "";
+    Anchor: (Left: 0, Right: 0);
+    FlexWeight: 1;
+    Style: (TextColor: #e6e6e6, FontSize: 12, Wrap: false);
+  }
+}

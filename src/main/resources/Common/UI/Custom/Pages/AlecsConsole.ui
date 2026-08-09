@@ -1,0 +1,140 @@
+$C = "../Common.ui";
+
+Group {
+  Anchor: (Left: 10, Top: 10, Right: 10, Height: 700);
+  Background: (Color: #0a0f17);
+  Padding: (Horizontal: 8, Vertical: 8);
+  LayoutMode: Top;
+
+  Group {
+    Anchor: (Bottom: 8, Height: 28);
+    LayoutMode: Left;
+
+    Label {
+      Text: "Alec's Console";
+      Anchor: (Width: 220, Height: 28);
+      Style: (TextColor: #d8e6f3, FontSize: 18, RenderBold: true, VerticalAlignment: Center);
+    }
+
+    Label #Status {
+      Text: "Live";
+      FlexWeight: 1;
+      Anchor: (Height: 28);
+      Style: (TextColor: #8fb3d9, FontSize: 12, VerticalAlignment: Center);
+    }
+  }
+
+  Group {
+    Anchor: (Bottom: 6, Height: 28);
+    LayoutMode: Left;
+
+    $C.@DropdownBox #Source {
+      Anchor: (Width: 190, Height: $C.@DropdownBoxHeight);
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@DropdownBox #File {
+      Anchor: (Width: 430, Height: $C.@DropdownBoxHeight);
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@SmallSecondaryTextButton #RefreshFiles {
+      Anchor: (Width: 90, Height: 24);
+      Text: "Refresh";
+    }
+  }
+
+  Group {
+    Anchor: (Bottom: 6, Height: 30);
+    LayoutMode: Left;
+
+    $C.@DropdownBox #Level {
+      Anchor: (Width: 145, Height: $C.@DropdownBoxHeight);
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@DropdownBox #Logger {
+      Anchor: (Width: 220, Height: $C.@DropdownBoxHeight);
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@TextField #SearchText {
+      @Anchor = (Width: 300, Height: 26);
+      PlaceholderText: "filter text...";
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@SmallSecondaryTextButton #Search {
+      Anchor: (Width: 80, Height: 24);
+      Text: "Search";
+    }
+  }
+
+  Group {
+    Anchor: (Bottom: 6, Height: 26);
+    LayoutMode: Left;
+
+    $C.@SmallSecondaryTextButton #Pause {
+      Anchor: (Width: 80, Height: 22);
+      Text: "Pause";
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@SmallSecondaryTextButton #MultiSelect {
+      Anchor: (Width: 100, Height: 22);
+      Text: "Multi: off";
+    }
+
+    Group { Anchor: (Width: 6); }
+
+    $C.@SmallSecondaryTextButton #ClearSelection {
+      Anchor: (Width: 110, Height: 22);
+      Text: "Clear selected";
+    }
+  }
+
+  Group #Rows {
+    Anchor: (Left: 0, Right: 0);
+    Background: (Color: #0f1624);
+    FlexWeight: 1;
+    LayoutMode: TopScrolling;
+    Padding: (Left: 4, Right: 4);
+  }
+
+  Group {
+    Anchor: (Top: 6, Bottom: 6, Height: 24);
+    LayoutMode: Left;
+
+    $C.@SmallSecondaryTextButton #Previous {
+      Anchor: (Width: 90, Height: 22);
+      Text: "Previous";
+    }
+
+    Label #Page {
+      Text: "Page 1 / 1";
+      Anchor: (Width: 140, Height: 22);
+      Style: (TextColor: #96a9be, FontSize: 12, HorizontalAlignment: Center, VerticalAlignment: Center);
+    }
+
+    $C.@SmallSecondaryTextButton #Next {
+      Anchor: (Width: 90, Height: 22);
+      Text: "Next";
+    }
+  }
+
+  MultilineTextField #Selected {
+    Style: $C.@DefaultInputFieldStyle;
+    PlaceholderStyle: $C.@DefaultInputFieldPlaceholderStyle;
+    Background: $C.@InputBoxBackground;
+    AutoGrow: false;
+    Padding: (Horizontal: 10, Vertical: 6);
+    Anchor: (Left: 0, Right: 0, Height: 72);
+    PlaceholderText: "Select a row to view and copy its full text.";
+  }
+}
