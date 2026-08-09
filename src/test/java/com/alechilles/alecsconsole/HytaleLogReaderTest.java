@@ -141,7 +141,7 @@ class HytaleLogReaderTest {
     void boundsOnePendingRecordAndMarksTruncation() throws IOException {
         Path log = tempDir.resolve("large_server.log");
         Files.writeString(log,
-                "[2026/08/09 04:23:03 INFO] [NPC] start\n" + "x".repeat(210_000) + "\n",
+                "[2026/08/09 04:23:03 INFO] [NPC] start\n" + "x".repeat(2_000_000) + "\n",
                 StandardCharsets.UTF_8);
 
         HytaleLogReader.SearchResult result = HytaleLogReader.search(log,
@@ -149,7 +149,24 @@ class HytaleLogReaderTest {
 
         String message = result.newestFirst().get(0).message();
         assertTrue(message.contains("[truncated]"));
-        assertTrue(message.length() <= 200_000 + "\n[truncated]".length());
+        assertTrue(message.length() <= LogEntry.MAX_MESSAGE_CHARS
+                + LogEntry.TRUNCATION_MARKER.length());
+    }
+
+    @Test
+    void searchesTheSameTimestampShownByTheUi() throws IOException {
+        Path log = tempDir.resolve("display-time_server.log");
+        Files.writeString(log, "[2026/08/09 04:23:03 INFO] [NPC] visible time\n",
+                StandardCharsets.UTF_8);
+        long epochMillis = java.time.LocalDateTime.parse("2026/08/09 04:23:03",
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+                .toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
+
+        HytaleLogReader.SearchResult result = HytaleLogReader.search(log,
+                new LogFilter(Level.ALL.intValue(), LogFilter.ALL_LOGGERS,
+                        LogEntry.displayTime(epochMillis)), 10, () -> false);
+
+        assertEquals(1, result.totalMatches());
     }
 
     @Test

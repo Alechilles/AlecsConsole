@@ -56,6 +56,22 @@ class LiveLogStoreTest {
         assertEquals(List.of(other), backendSubscribers);
     }
 
+    @Test
+    void boundsCapturedMessagesAndSearchesTheDisplayedTime() {
+        LiveLogStore store = new LiveLogStore(2);
+        LogRecord record = record(Level.INFO, "x".repeat(100_000));
+        record.setMillis(1_786_250_582_000L);
+
+        store.append(record);
+
+        LogEntry entry = store.snapshotNewest(1).get(0);
+        assertTrue(entry.message().length() <= LogEntry.MAX_MESSAGE_CHARS
+                + LogEntry.TRUNCATION_MARKER.length());
+        assertTrue(entry.message().endsWith(LogEntry.TRUNCATION_MARKER));
+        assertTrue(new LogFilter(Level.ALL.intValue(), LogFilter.ALL_LOGGERS,
+                LogEntry.displayTime(entry.epochMillis())).matches(entry));
+    }
+
     private static LogRecord record(Level level, String message) {
         return new LogRecord(level, message);
     }

@@ -16,9 +16,6 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Comparator;
@@ -39,9 +36,9 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private static final String CLIENT = "CLIENT";
     private static final int MAX_SELECTED_ROWS = 200;
     private static final int MAX_SELECTED_CHARS = 20_000;
+    private static final int MAX_ROW_MESSAGE_CHARS = 1_000;
     private static final int MAX_LOGGER_CHOICES = 250;
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
-            .withZone(ZoneId.systemDefault());
+    private static final String SELECTION_TRUNCATED = "… (selection truncated)";
 
     private final ConsolePageManager manager;
     private final LiveLogStore liveStore;
@@ -637,17 +634,25 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     }
 
     private String selectedText() {
-        StringBuilder text = new StringBuilder();
-        int count = 0;
         List<LogEntry> displayOrder = new ArrayList<>(selectedRows.values());
         displayOrder.sort(Comparator.comparingLong(LogEntry::sequence).reversed());
+        return selectedText(displayOrder, selectionTruncated);
+    }
+
+    static String selectedText(List<LogEntry> displayOrder, boolean alreadyTruncated) {
+        StringBuilder text = new StringBuilder();
+        int count = 0;
         for (LogEntry entry : displayOrder) {
             String line = fullText(entry);
             if (count >= MAX_SELECTED_ROWS || text.length() + line.length() + 1 > MAX_SELECTED_CHARS) {
-                if (!text.isEmpty()) {
+                int contentLimit = MAX_SELECTED_CHARS - SELECTION_TRUNCATED.length() - 1;
+                if (!text.isEmpty() && text.length() < contentLimit) {
                     text.append('\n');
                 }
-                text.append("… (selection truncated)");
+                if (text.length() < contentLimit) {
+                    text.append(line, 0, Math.min(line.length(), contentLimit - text.length()));
+                }
+                appendSelectionMarker(text);
                 break;
             }
             if (!text.isEmpty()) {
@@ -656,13 +661,21 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             text.append(line);
             count++;
         }
-        if (selectionTruncated && !text.toString().contains("selection truncated")) {
-            if (!text.isEmpty()) {
-                text.append('\n');
-            }
-            text.append("… (selection truncated)");
+        if (alreadyTruncated && text.indexOf(SELECTION_TRUNCATED) < 0) {
+            appendSelectionMarker(text);
         }
         return text.toString();
+    }
+
+    private static void appendSelectionMarker(StringBuilder text) {
+        int contentLimit = MAX_SELECTED_CHARS - SELECTION_TRUNCATED.length() - 1;
+        if (text.length() > contentLimit) {
+            text.setLength(contentLimit);
+        }
+        if (!text.isEmpty()) {
+            text.append('\n');
+        }
+        text.append(SELECTION_TRUNCATED);
     }
 
     private static DropdownEntryInfo entry(String label, String value) {
@@ -670,12 +683,14 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     }
 
     private static String displayTime(LogEntry entry) {
-        return entry.epochMillis() <= 0 ? "--:--:--" : TIME_FORMAT.format(Instant.ofEpochMilli(entry.epochMillis()));
+        return LogEntry.displayTime(entry.epochMillis());
     }
 
-    private static String firstLine(String message) {
+    static String firstLine(String message) {
         int newline = message.indexOf('\n');
-        return newline < 0 ? message : message.substring(0, newline) + " …";
+        int end = newline < 0 ? message.length() : newline;
+        end = Math.min(end, MAX_ROW_MESSAGE_CHARS);
+        return end == message.length() ? message : message.substring(0, end) + " …";
     }
 
     private static String fullText(LogEntry entry) {

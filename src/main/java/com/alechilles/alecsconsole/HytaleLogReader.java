@@ -3,6 +3,7 @@ package com.alechilles.alecsconsole;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -25,8 +26,7 @@ import java.util.logging.Level;
 
 /** Streaming parser for Hytale's UTF-8 server log format. */
 public final class HytaleLogReader {
-    private static final int MAX_PENDING_TEXT_CHARS = 200_000;
-    private static final String TRUNCATION_MARKER = "\n[truncated]";
+    private static final int MAX_PENDING_TEXT_CHARS = LogEntry.MAX_MESSAGE_CHARS;
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
     private static final Pattern PREFIX = Pattern.compile(
@@ -78,12 +78,13 @@ public final class HytaleLogReader {
         ParsedRecord[] pending = {null};
 
         try (var reader = openLog(path, allowedRoot)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
+            BoundedLine boundedLine;
+            while ((boundedLine = readLine(reader, cancelled)) != null) {
                 if (isCancelled(cancelled)) {
                     return canceledResult();
                 }
 
+                String line = boundedLine.text();
                 Matcher matcher = PREFIX.matcher(line);
                 if (matcher.matches()) {
                     ParsedRecord parsed = parse(matcher);
@@ -93,13 +94,19 @@ public final class HytaleLogReader {
                                     sequence, totalMatches);
                         }
                         pending[0] = parsed;
+                        if (boundedLine.truncated()) {
+                            pending[0].markTruncated();
+                        }
                     } else {
-                        appendRawLine(pending, line);
+                        appendRawLine(pending, line, boundedLine.truncated());
                     }
                 } else if (pending[0] != null) {
                     pending[0].appendLine(line);
+                    if (boundedLine.truncated()) {
+                        pending[0].markTruncated();
+                    }
                 } else {
-                    appendRawLine(pending, line);
+                    appendRawLine(pending, line, boundedLine.truncated());
                 }
             }
 
@@ -161,11 +168,14 @@ public final class HytaleLogReader {
                 StandardCharsets.UTF_8));
     }
 
-    private static void appendRawLine(ParsedRecord[] pending, String line) {
+    private static void appendRawLine(ParsedRecord[] pending, String line, boolean lineTruncated) {
         if (pending[0] == null) {
             pending[0] = new ParsedRecord(0, "", "", "", line);
         } else {
             pending[0].appendLine(line);
+        }
+        if (lineTruncated) {
+            pending[0].markTruncated();
         }
     }
 
@@ -180,12 +190,8 @@ public final class HytaleLogReader {
         String levelName = parsed.levelName;
         int levelValue = levelValue(levelName);
         String loggerName = parsed.loggerName;
-        String message = parsed.message.toString();
-        String searchText = (parsed.prefixText + " " + parsed.epochMillis + " " + levelName + " "
-                + loggerName + " " + message)
-                .toLowerCase(Locale.ROOT);
-        LogEntry entry = new LogEntry(nextSequence, parsed.epochMillis, levelValue,
-                levelName, loggerName, message, searchText);
+        LogEntry entry = LogEntry.create(nextSequence, parsed.epochMillis, levelValue,
+                levelName, loggerName, parsed.message.toString(), parsed.prefixText);
         if (!filter.matches(entry)) {
             return;
         }
@@ -218,6 +224,40 @@ public final class HytaleLogReader {
 
     private static SearchResult canceledResult() {
         return new SearchResult(List.of(), 0, false, Status.CANCELED, "Search canceled");
+    }
+
+    private static BoundedLine readLine(BufferedReader reader, BooleanSupplier cancelled)
+            throws IOException {
+        StringBuilder text = new StringBuilder(Math.min(4_096, MAX_PENDING_TEXT_CHARS));
+        boolean sawCharacter = false;
+        boolean truncated = false;
+        int readCount = 0;
+        int value;
+        while ((value = reader.read()) != -1) {
+            sawCharacter = true;
+            if (value == '\n') {
+                break;
+            }
+            if (text.length() < MAX_PENDING_TEXT_CHARS) {
+                text.append((char) value);
+            } else {
+                truncated = true;
+            }
+            if ((++readCount & 4095) == 0 && isCancelled(cancelled)) {
+                throw new InterruptedIOException("Search canceled");
+            }
+        }
+        if (!sawCharacter && value == -1) {
+            return null;
+        }
+        int length = text.length();
+        if (length > 0 && text.charAt(length - 1) == '\r') {
+            text.setLength(length - 1);
+        }
+        return new BoundedLine(text.toString(), truncated);
+    }
+
+    private record BoundedLine(String text, boolean truncated) {
     }
 
     private static final class ParsedRecord {
@@ -254,7 +294,20 @@ public final class HytaleLogReader {
             if (remaining > 0) {
                 message.append(text, 0, remaining);
             }
-            message.append(TRUNCATION_MARKER);
+            message.append(LogEntry.TRUNCATION_MARKER);
+            truncated = true;
+        }
+
+        private void markTruncated() {
+            if (truncated) {
+                return;
+            }
+            int contentLimit = Math.max(0,
+                    MAX_PENDING_TEXT_CHARS - LogEntry.TRUNCATION_MARKER.length());
+            if (message.length() > contentLimit) {
+                message.setLength(contentLimit);
+            }
+            message.append(LogEntry.TRUNCATION_MARKER);
             truncated = true;
         }
     }

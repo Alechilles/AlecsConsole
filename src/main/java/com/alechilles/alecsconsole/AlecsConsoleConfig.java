@@ -4,6 +4,8 @@ import com.hypixel.hytale.codec.Codec;
 import com.hypixel.hytale.codec.KeyedCodec;
 import com.hypixel.hytale.codec.builder.BuilderCodec;
 
+import java.util.Objects;
+
 /** Runtime settings for the bounded live and historical log views. */
 public final class AlecsConsoleConfig {
     public static final BuilderCodec<AlecsConsoleConfig> CODEC = BuilderCodec
@@ -56,13 +58,22 @@ public final class AlecsConsoleConfig {
         return clientLogDirectory;
     }
 
-    public AlecsConsoleConfig validated() {
+    public boolean validate() {
+        int originalLiveCapacity = liveCapacity;
+        int originalPageSize = pageSize;
+        int originalSearchDebounceMs = searchDebounceMs;
+        int originalDiskResultLimit = diskResultLimit;
+        String originalClientLogDirectory = clientLogDirectory;
         liveCapacity = clamp(liveCapacity, 100, 50_000);
         pageSize = clamp(pageSize, 25, 500);
         searchDebounceMs = clamp(searchDebounceMs, 100, 2_000);
         diskResultLimit = clamp(diskResultLimit, 100, 20_000);
         clientLogDirectory = blankToNull(clientLogDirectory);
-        return this;
+        return originalLiveCapacity != liveCapacity
+                || originalPageSize != pageSize
+                || originalSearchDebounceMs != searchDebounceMs
+                || originalDiskResultLimit != diskResultLimit
+                || !Objects.equals(originalClientLogDirectory, clientLogDirectory);
     }
 
     private static int clamp(int value, int minimum, int maximum) {

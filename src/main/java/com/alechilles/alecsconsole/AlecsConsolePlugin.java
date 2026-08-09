@@ -6,6 +6,7 @@ import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.util.Config;
 
 import javax.annotation.Nonnull;
+import java.util.logging.Level;
 
 /** Alec's Console plugin entry point. */
 public final class AlecsConsolePlugin extends JavaPlugin {
@@ -24,7 +25,16 @@ public final class AlecsConsolePlugin extends JavaPlugin {
         if (settings == null) {
             settings = new AlecsConsoleConfig();
         }
-        settings.validated();
+        if (settings.validate()) {
+            getLogger().at(Level.WARNING).log(
+                    "Some Alec's Console settings were outside supported limits and were clamped.");
+        }
+        try {
+            config.save().join();
+        } catch (RuntimeException exception) {
+            getLogger().at(Level.WARNING).withCause(exception)
+                    .log("Could not save Alec's Console config; using the in-memory settings.");
+        }
 
         LiveLogStore liveStore = new LiveLogStore(settings.getLiveCapacity());
         LogCaptureSubscriber capture = new LogCaptureSubscriber(liveStore);
