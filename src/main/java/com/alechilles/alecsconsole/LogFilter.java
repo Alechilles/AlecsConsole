@@ -20,9 +20,6 @@ public record LogFilter(int minimumLevel, String loggerName, String text) {
     }
 
     private static String normalizeLogger(String loggerName) {
-        if (loggerName == null || loggerName.isBlank()) {
-            return ALL_LOGGERS;
-        }
-        return loggerName.strip();
+        return loggerName == null ? "" : loggerName;
     }
 }
