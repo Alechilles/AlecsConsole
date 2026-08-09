@@ -17,6 +17,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,7 +33,7 @@ public final class ConsolePageManager implements AutoCloseable {
                 Thread thread = new Thread(r, "alecs-console-files");
                 thread.setDaemon(true);
                 return thread;
-            }, new ThreadPoolExecutor.DiscardOldestPolicy());
+            }, new ThreadPoolExecutor.AbortPolicy());
     private final Set<ConsolePage> pages = ConcurrentHashMap.newKeySet();
     private final Map<ConsolePage, ScheduledFuture<?>> debounceTasks = new ConcurrentHashMap<>();
     private final Map<ConsolePage, Future<?>> fileTasks = new ConcurrentHashMap<>();
@@ -84,7 +85,7 @@ public final class ConsolePageManager implements AutoCloseable {
             PageManager pageManager = player.getPageManager();
             pageManager.openCustomPage(ref, store, page);
             pages.add(page);
-            refreshFiles(page);
+            refreshFiles(page, page.beginFileRefresh());
         });
     }
 
@@ -123,8 +124,8 @@ public final class ConsolePageManager implements AutoCloseable {
         return catalog.refresh();
     }
 
-    void refreshFiles(ConsolePage page) {
-        submitFileWork(page, () -> page.applyFileOptions(refreshFiles()));
+    void refreshFiles(ConsolePage page, long generation) {
+        submitFileWork(page, () -> page.applyFileOptions(generation, refreshFiles()));
     }
 
     void cancelFileWork(ConsolePage page) {
@@ -150,7 +151,13 @@ public final class ConsolePageManager implements AutoCloseable {
             }
         };
         fileTasks.put(page, task);
-        fileExecutor.execute(task);
+        try {
+            fileExecutor.execute(task);
+        } catch (RejectedExecutionException exception) {
+            fileTasks.remove(page, task);
+            task.cancel(false);
+            page.applyFileWorkRejected();
+        }
     }
 
     private void flushPages() {

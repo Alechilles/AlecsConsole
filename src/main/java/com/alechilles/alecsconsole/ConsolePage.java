@@ -22,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +49,8 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private final Map<Long, LogEntry> renderedRows = new LinkedHashMap<>();
     private final LinkedHashMap<Long, LogEntry> selectedRows = new LinkedHashMap<>();
     private final ArrayDeque<LogEntry> liveMatches = new ArrayDeque<>();
-    private final Set<String> liveLoggerNames = new TreeSet<>();
+    private final ArrayDeque<LogEntry> liveWindow = new ArrayDeque<>();
+    private final Map<String, Integer> liveLoggerCounts = new HashMap<>();
     private List<LogFileCatalog.Option> fileOptions;
     private List<LogEntry> historicalRows = List.of();
     private List<LogEntry> pausedSnapshot = List.of();
@@ -66,6 +68,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private long unseen;
     private long debounceGeneration;
     private long searchGeneration;
+    private long fileRefreshGeneration;
     private int pageIndex;
     private int displayedRowCount;
     private String status = "Live";
@@ -183,29 +186,34 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         if (canceled || !LIVE.equals(source)) {
             return;
         }
+        long latestCaptured = liveStore.latestSequence();
+        if (latestCaptured <= lastDeliveredSequence) {
+            return;
+        }
+        if (paused) {
+            unseen += latestCaptured - lastDeliveredSequence;
+            lastDeliveredSequence = latestCaptured;
+            updateControlsOnly();
+            return;
+        }
         List<LogEntry> incoming = liveStore.snapshotAfter(lastDeliveredSequence, config.getLiveCapacity());
         if (incoming.isEmpty()) {
             return;
         }
         long latest = incoming.get(incoming.size() - 1).sequence();
-        if (paused) {
-            unseen += incoming.size();
-            lastDeliveredSequence = latest;
-            updateControlsOnly();
-            return;
-        }
         lastDeliveredSequence = latest;
         unseen = 0;
         pageIndex = 0;
         LogFilter activeFilter = filter();
         for (LogEntry entry : incoming) {
-            rememberLogger(entry.loggerName());
+            appendLiveWindow(entry);
             if (activeFilter.matches(entry)) {
                 liveMatches.addFirst(entry);
-                while (liveMatches.size() > config.getLiveCapacity()) {
-                    liveMatches.removeLast();
-                }
             }
+        }
+        long oldestRetained = liveWindow.isEmpty() ? Long.MAX_VALUE : liveWindow.getFirst().sequence();
+        while (!liveMatches.isEmpty() && liveMatches.getLast().sequence() < oldestRetained) {
+            liveMatches.removeLast();
         }
         displayedRowCount = liveMatches.size();
         updateRowsAndControls(page(new ArrayList<>(liveMatches)));
@@ -239,8 +247,12 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         updateRowsAndControls(currentRows());
     }
 
-    synchronized void applyFileOptions(List<LogFileCatalog.Option> options) {
-        if (canceled) {
+    synchronized long beginFileRefresh() {
+        return ++fileRefreshGeneration;
+    }
+
+    synchronized void applyFileOptions(long generation, List<LogFileCatalog.Option> options) {
+        if (canceled || generation != fileRefreshGeneration) {
             return;
         }
         String previousCatalogId = catalogId;
@@ -257,6 +269,14 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         updateControlsOnly();
     }
 
+    synchronized void applyFileWorkRejected() {
+        if (canceled) {
+            return;
+        }
+        status = "File worker is busy; try again";
+        updateControlsOnly();
+    }
+
     public synchronized void cancelPendingWork() {
         canceled = true;
         debounceGeneration++;
@@ -264,6 +284,8 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         renderedRows.clear();
         selectedRows.clear();
         liveMatches.clear();
+        liveWindow.clear();
+        liveLoggerCounts.clear();
         pausedSnapshot = List.of();
     }
 
@@ -311,7 +333,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             displayedRowCount = 0;
             if (fileOptions.isEmpty()) {
                 status = "Refreshing files…";
-                manager.refreshFiles(this);
+                manager.refreshFiles(this, beginFileRefresh());
             }
             updateRowsAndControls(List.of());
         }
@@ -338,6 +360,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             updateControlsOnly();
             return;
         }
+        fileRefreshGeneration++;
         long generation = ++searchGeneration;
         status = "Searching…";
         updateControlsOnly();
@@ -400,7 +423,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         invalidateHistoricalWork();
         status = "Refreshing files…";
         updateControlsOnly();
-        manager.refreshFiles(this);
+        manager.refreshFiles(this, beginFileRefresh());
     }
 
     private void chooseFirstFile() {
@@ -425,11 +448,14 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
                 ? pausedSnapshot
                 : liveStore.snapshotNewest(config.getLiveCapacity());
         liveMatches.clear();
-        liveLoggerNames.clear();
+        liveWindow.clear();
+        liveLoggerCounts.clear();
         LogFilter filter = filter();
+        for (LogEntry entry : snapshot) {
+            appendLiveWindow(entry);
+        }
         for (int index = snapshot.size() - 1; index >= 0; index--) {
             LogEntry entry = snapshot.get(index);
-            rememberLogger(entry.loggerName());
             if (filter.matches(entry)) {
                 liveMatches.addLast(entry);
             }
@@ -441,14 +467,18 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         return page(new ArrayList<>(liveMatches));
     }
 
-    private void rememberLogger(String name) {
-        if (liveLoggerNames.size() < MAX_LOGGER_CHOICES || liveLoggerNames.contains(name)) {
-            liveLoggerNames.add(name);
+    private void appendLiveWindow(LogEntry entry) {
+        liveWindow.addLast(entry);
+        liveLoggerCounts.merge(entry.loggerName(), 1, Integer::sum);
+        while (liveWindow.size() > config.getLiveCapacity()) {
+            LogEntry evicted = liveWindow.removeFirst();
+            liveLoggerCounts.computeIfPresent(evicted.loggerName(), (name, count) -> count == 1 ? null : count - 1);
         }
     }
 
     private void invalidateHistoricalWork() {
         searchGeneration++;
+        fileRefreshGeneration++;
         manager.cancelFileWork(this);
     }
 
@@ -589,7 +619,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private List<DropdownEntryInfo> loggerEntries() {
         Set<String> names = new TreeSet<>();
         if (LIVE.equals(source)) {
-            names.addAll(liveLoggerNames);
+            liveLoggerCounts.keySet().stream().sorted().limit(MAX_LOGGER_CHOICES).forEach(names::add);
         } else {
             for (LogEntry entry : historicalRows) {
                 names.add(entry.loggerName());
