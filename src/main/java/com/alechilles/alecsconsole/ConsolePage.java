@@ -86,7 +86,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         commands.append(LAYOUT);
         bindStaticEvents(events);
         commands.set("#SearchText.Value", searchText);
-        List<LogEntry> rows = rebuildLiveRows();
+        List<LogEntry> rows = LIVE.equals(source) ? rebuildLiveRows() : currentRows();
         setControlState(commands);
         renderRows(commands, events, rows);
     }
@@ -141,6 +141,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
                 pageIndex = 0;
                 status = "Ready to search";
                 updateRowsAndControls(List.of());
+                submitHistoricalSearch();
             }
             case LevelChanged -> {
                 minimumLevel = levelValue(data.value());
@@ -331,8 +332,13 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             if (fileOptions.isEmpty()) {
                 status = "Refreshing files…";
                 manager.refreshFiles(this, beginFileRefresh());
+            } else if (catalogId == null) {
+                status = "No log files available";
             }
             updateRowsAndControls(List.of());
+            if (catalogId != null) {
+                submitHistoricalSearch();
+            }
         }
     }
 
@@ -512,6 +518,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
         commands.set("#Source.Value", source);
         commands.set("#File.Entries", fileEntries());
         commands.set("#File.Value", catalogId == null ? "" : catalogId);
+        commands.set("#FileControls.Visible", !LIVE.equals(source));
         commands.set("#Level.Entries", levelEntries());
         commands.set("#Level.Value", levelName(minimumLevel));
         commands.set("#Logger.Entries", loggerEntries());

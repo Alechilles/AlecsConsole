@@ -44,12 +44,17 @@ public final class LogFileCatalog {
     }
 
     public LogFileCatalog(String configuredClientDirectory) {
-        this(Path.of("logs").toAbsolutePath().normalize(), configuredClientDirectory);
+        this(Path.of("logs").toAbsolutePath().normalize(), configuredClientDirectory,
+                appDataRoot());
     }
 
     LogFileCatalog(Path serverRoot, String configuredClientDirectory) {
+        this(serverRoot, configuredClientDirectory, appDataRoot());
+    }
+
+    LogFileCatalog(Path serverRoot, String configuredClientDirectory, Path appDataRoot) {
         this.serverRoot = Objects.requireNonNull(serverRoot, "serverRoot").toAbsolutePath().normalize();
-        this.clientRoots = clientRoots(configuredClientDirectory);
+        this.clientRoots = clientRoots(configuredClientDirectory, appDataRoot);
     }
 
     public synchronized List<Option> refresh() {
@@ -183,13 +188,23 @@ public final class LogFileCatalog {
         }
     }
 
-    private static List<Root> clientRoots(String configuredClientDirectory) {
-        ArrayList<Root> roots = new ArrayList<>();
+    private static Path appDataRoot() {
         String appData = System.getenv(APPDATA);
-        if (appData != null && !appData.isBlank()) {
-            Path appDataRoot = Path.of(appData);
-            roots.add(new Root("release", appDataRoot.resolve("Hytale/data/release/Logs").normalize()));
-            roots.add(new Root("pre-release", appDataRoot.resolve("Hytale/data/pre-release/Logs").normalize()));
+        if (appData == null || appData.isBlank()) {
+            return null;
+        }
+        try {
+            return Path.of(appData);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static List<Root> clientRoots(String configuredClientDirectory, Path appDataRoot) {
+        ArrayList<Root> roots = new ArrayList<>();
+        if (appDataRoot != null) {
+            roots.add(new Root("user-data",
+                    appDataRoot.resolve("Hytale/UserData/Logs").normalize()));
         }
         if (configuredClientDirectory != null && !configuredClientDirectory.isBlank()) {
             try {

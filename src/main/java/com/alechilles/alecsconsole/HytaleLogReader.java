@@ -10,9 +10,12 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoField;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,9 +32,16 @@ public final class HytaleLogReader {
     private static final int MAX_PENDING_TEXT_CHARS = LogEntry.MAX_MESSAGE_CHARS;
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
+    private static final DateTimeFormatter CLIENT_TIMESTAMP_FORMAT = new DateTimeFormatterBuilder()
+            .appendPattern("yyyy-MM-dd HH:mm:ss")
+            .appendFraction(ChronoField.NANO_OF_SECOND, 1, 9, true)
+            .toFormatter();
     private static final Pattern PREFIX = Pattern.compile(
             "^\\[(?<timestamp>\\d{4}/\\d{2}/\\d{2} \\d{2}:\\d{2}:\\d{2})\\s+"
                     + "(?<level>[^]]+)]\\s+\\[(?<logger>[^]]*)]\\s*(?<message>.*)$");
+    private static final Pattern CLIENT_PREFIX = Pattern.compile(
+            "^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{1,9})\\|"
+                    + "(?<level>[^|]*)\\|(?<logger>[^|]*)\\|(?<message>.*)$");
 
     private HytaleLogReader() {
     }
@@ -85,20 +95,15 @@ public final class HytaleLogReader {
                 }
 
                 String line = boundedLine.text();
-                Matcher matcher = PREFIX.matcher(line);
-                if (matcher.matches()) {
-                    ParsedRecord parsed = parse(matcher);
-                    if (parsed != null) {
-                        if (pending[0] != null) {
-                            appendMatch(pending[0], filter, retentionLimit, newestMatches,
-                                    sequence, totalMatches);
-                        }
-                        pending[0] = parsed;
-                        if (boundedLine.truncated()) {
-                            pending[0].markTruncated();
-                        }
-                    } else {
-                        appendRawLine(pending, line, boundedLine.truncated());
+                ParsedRecord parsed = parseLine(line);
+                if (parsed != null) {
+                    if (pending[0] != null) {
+                        appendMatch(pending[0], filter, retentionLimit, newestMatches,
+                                sequence, totalMatches);
+                    }
+                    pending[0] = parsed;
+                    if (boundedLine.truncated()) {
+                        pending[0].markTruncated();
                     }
                 } else if (pending[0] != null) {
                     pending[0].appendLine(line);
@@ -146,6 +151,30 @@ public final class HytaleLogReader {
         String prefixText = timestamp + " " + levelName + " [" + loggerName + "]";
         return new ParsedRecord(epochMillis, levelName, loggerName, prefixText,
                 matcher.group("message"));
+    }
+
+    private static ParsedRecord parseLine(String line) {
+        Matcher server = PREFIX.matcher(line);
+        if (server.matches()) {
+            return parse(server);
+        }
+        Matcher client = CLIENT_PREFIX.matcher(line);
+        if (!client.matches()) {
+            return null;
+        }
+        String timestamp = client.group("timestamp");
+        long epochMillis;
+        try {
+            epochMillis = LocalDateTime.parse(timestamp, CLIENT_TIMESTAMP_FORMAT)
+                    .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } catch (DateTimeParseException exception) {
+            return null;
+        }
+        String levelName = client.group("level").trim();
+        String loggerName = client.group("logger");
+        String prefixText = timestamp + " " + levelName + " [" + loggerName + "]";
+        return new ParsedRecord(epochMillis, levelName, loggerName, prefixText,
+                client.group("message"));
     }
 
     private static BufferedReader openLog(Path path, Path allowedRoot) throws IOException {
@@ -207,9 +236,12 @@ public final class HytaleLogReader {
     }
 
     private static int levelValue(String levelName) {
-        if ("WARN".equalsIgnoreCase(levelName) || "WARNING".equalsIgnoreCase(levelName)) {
-            return Level.WARNING.intValue();
+        if ("WARN".equalsIgnoreCase(levelName)) return Level.WARNING.intValue();
+        if ("ERROR".equalsIgnoreCase(levelName) || "FATAL".equalsIgnoreCase(levelName)) {
+            return Level.SEVERE.intValue();
         }
+        if ("DEBUG".equalsIgnoreCase(levelName)) return Level.FINE.intValue();
+        if ("TRACE".equalsIgnoreCase(levelName)) return Level.FINER.intValue();
         try {
             return Level.parse(levelName).intValue();
         } catch (IllegalArgumentException exception) {

@@ -49,6 +49,25 @@ class HytaleLogReaderTest {
     }
 
     @Test
+    void searchesClientPipeFormatAsIndividualRecords() throws IOException {
+        Path log = tempDir.resolve("sample_client.log");
+        Files.writeString(log, """
+                2026-08-09 19:32:48.0594|INFO|HytaleClient.Application.Program|HytaleClient v0.5.7
+                2026-08-09 19:32:48.2898|WARN|HytaleClient.Application.Program|Revision mismatch
+                continued client detail
+                """, StandardCharsets.UTF_8);
+
+        HytaleLogReader.SearchResult result = HytaleLogReader.search(log,
+                new LogFilter(Level.WARNING.intValue(), "HytaleClient.Application.Program", "revision"),
+                10, () -> false);
+
+        assertEquals(HytaleLogReader.Status.COMPLETE, result.status());
+        assertEquals(1, result.totalMatches());
+        assertEquals("Revision mismatch\ncontinued client detail",
+                result.newestFirst().get(0).message());
+    }
+
+    @Test
     void retainsLeadingRawLinesAsUnknownMetadataRecords() throws IOException {
         Path log = tempDir.resolve("raw_server.log");
         Files.writeString(log, """
@@ -172,6 +191,25 @@ class HytaleLogReaderTest {
     @Test
     void malformedConfiguredClientDirectoryDisablesOnlyThatRoot() {
         assertDoesNotThrow(() -> new LogFileCatalog("\u0000"));
+    }
+
+    @Test
+    void discoversClientLogsInHytaleUserData() throws IOException {
+        Path serverRoot = tempDir.resolve("server-logs");
+        Files.createDirectories(serverRoot);
+        Path appData = tempDir.resolve("appdata");
+        Path clientLogs = appData.resolve("Hytale/UserData/Logs");
+        Files.createDirectories(clientLogs);
+        Path clientLog = clientLogs.resolve("2026-08-09_19-28-52_client.log");
+        Files.writeString(clientLog, "client message\n", StandardCharsets.UTF_8);
+
+        LogFileCatalog catalog = new LogFileCatalog(serverRoot, null, appData);
+
+        List<LogFileCatalog.Option> clientOptions = catalog.refresh().stream()
+                .filter(option -> option.source() == LogFileCatalog.Source.CLIENT)
+                .toList();
+        assertEquals(1, clientOptions.size());
+        assertEquals(clientLog.toRealPath(), clientOptions.get(0).path());
     }
 
     @Test

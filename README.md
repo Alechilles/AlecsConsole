@@ -18,7 +18,7 @@ The page can show:
 
 Remote players cannot upload or expose their local client logs through Hytale's plugin API. The client source is therefore same-host only; `ClientLogDirectory` can add one explicit local directory.
 
-Live text filtering waits 300 ms after typing stops. Historical files are read only when **Search** is pressed or the search field is submitted. Results are paged, Pause/Follow freezes and resumes the live view, and selected rows expose full text for copying. Multi-select preserves display order.
+Live text filtering waits 300 ms after typing stops. Selecting a historical source or file loads it once; after changing its filters, press **Search** or submit the search field to scan again. Results are paged, Pause/Follow freezes and resumes the live view, and selected rows expose full text for copying. Multi-select preserves display order.
 
 ## Configuration
 
