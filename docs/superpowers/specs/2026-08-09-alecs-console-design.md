@@ -18,8 +18,8 @@ The plugin is an in-game log viewer, not a command-execution console or a genera
 - Initial version: `0.1.0`.
 - Maven group: `com.alechilles`.
 - Manifest group: `Alechilles`.
-- Mod ID: `alecsconsole`.
-- Display name: `Alec's Console`.
+- Project/package slug: `alecsconsole`.
+- Manifest name and display name: `Alec's Console` (AzureDoom 1.0.46 emits its `modId` as the Hytale manifest `Name`).
 - Main class: `com.alechilles.alecsconsole.AlecsConsolePlugin`.
 - Asset pack: included for the custom UI.
 - Patchline/version defaults: standalone `gradle.properties` uses release 0.5.7; parent workspace registration consumes the same workspace properties.
@@ -32,7 +32,7 @@ The standalone repository owns its source, wrapper, build configuration, docs, a
 ### Access
 
 - `/console` opens the page for a player.
-- The command uses Hytale's plugin-owned command permission. The expected generated node is `alechilles.alecsconsole.command.console`; implementation must confirm the exact generated node and document it.
+- The command uses the explicit permission `alechilles.alecsconsole.command.console`. This avoids Hytale's generated permission incorporating spaces and punctuation from the display name.
 - Players without the permission cannot discover or execute the command through the normal command tree.
 
 ### Sources
