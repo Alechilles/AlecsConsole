@@ -25,88 +25,85 @@ Group {
   }
 
   Group {
-    Anchor: (Bottom: 6, Height: 28);
-    LayoutMode: Left;
-
-    Label {
-      Text: "Source";
-      Anchor: (Width: 58, Height: 28);
-      Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
-    }
-
-    $C.@DropdownBox #Source {
-      Anchor: (Width: 180, Height: $C.@DropdownBoxHeight);
-    }
-
-    Group { Anchor: (Width: 16); }
-
-    Group #FileControls {
-      Anchor: (Width: 620, Height: 28);
-      LayoutMode: Left;
-
-      Label {
-        Text: "Log file";
-        Anchor: (Width: 62, Height: 28);
-        Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
-      }
-
-      $C.@DropdownBox #File {
-        Anchor: (Width: 430, Height: $C.@DropdownBoxHeight);
-      }
-
-      Group { Anchor: (Width: 8); }
-
-      $C.@SmallSecondaryTextButton #RefreshFiles {
-        Anchor: (Width: 110, Height: 24);
-        Text: "Refresh";
-      }
-    }
-  }
-
-  Group {
     Anchor: (Bottom: 6, Height: 30);
     LayoutMode: Left;
 
     Label {
       Text: "Level";
-      Anchor: (Width: 48, Height: 28);
+      Anchor: (Width: 40, Height: 28);
       Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
     }
 
     $C.@DropdownBox #Level {
-      Anchor: (Width: 145, Height: $C.@DropdownBoxHeight);
+      Anchor: (Width: 115, Height: $C.@DropdownBoxHeight);
     }
 
-    Group { Anchor: (Width: 14); }
+    Group { Anchor: (Width: 8); }
 
     Label {
       Text: "Logger";
-      Anchor: (Width: 58, Height: 28);
+      Anchor: (Width: 48, Height: 28);
       Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
     }
 
     $C.@DropdownBox #Logger {
-      Anchor: (Width: 220, Height: $C.@DropdownBoxHeight);
+      Anchor: (Width: 170, Height: $C.@DropdownBoxHeight);
     }
 
-    Group { Anchor: (Width: 14); }
+    Group { Anchor: (Width: 8); }
 
     Label {
       Text: "Search";
-      Anchor: (Width: 58, Height: 28);
+      Anchor: (Width: 48, Height: 28);
       Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
     }
 
     $C.@TextField #SearchText {
-      @Anchor = (Width: 300, Height: 26);
+      @Anchor = (Width: 220, Height: 26);
       PlaceholderText: "filter text...";
     }
 
     Group { Anchor: (Width: 6); }
 
     $C.@SmallSecondaryTextButton #Search {
-      Anchor: (Width: 110, Height: 24);
+      Anchor: (Width: 100, Height: 24);
       Text: "Search";
+    }
+
+    Group { FlexWeight: 1; }
+
+    Label {
+      Text: "Source";
+      Anchor: (Width: 48, Height: 28);
+      Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
+    }
+
+    $C.@DropdownBox #Source {
+      Anchor: (Width: 150, Height: $C.@DropdownBoxHeight);
+    }
+
+    Group { Anchor: (Width: 8); }
+
+    Group #FileControls {
+      Anchor: (Width: 456, Height: 28);
+      LayoutMode: Left;
+
+      Label {
+        Text: "Log file";
+        Anchor: (Width: 50, Height: 28);
+        Style: (TextColor: #96a9be, FontSize: 11, RenderBold: true, VerticalAlignment: Center);
+      }
+
+      $C.@DropdownBox #File {
+        Anchor: (Width: 300, Height: $C.@DropdownBoxHeight);
+      }
+
+      Group { Anchor: (Width: 6); }
+
+      $C.@SmallSecondaryTextButton #RefreshFiles {
+        Anchor: (Width: 100, Height: 24);
+        Text: "Refresh";
+      }
     }
   }
 
