@@ -51,6 +51,6 @@ These settings control the retained live-entry limit, rows per page, live-search
 
 ## Compatibility
 
-- Hytale Server `0.5.x`
+- Hytale Server `>=0.5.0 <0.7.0`
 
 The original feature set was inspired by `duke-darius/hytale-console`. Alec's Console is an independent, ground-up rebuild.

@@ -1,0 +1,61 @@
+{
+  "modName": "Alec's Console",
+  "repository": "Alechilles/AlecsConsole",
+  "github": {
+    "prerelease": false
+  },
+  "packaging": "jar",
+  "artifactNameTemplate": "Alec's Console v{version}.jar",
+  "versionSource": "manifest",
+  "versionFile": "src/main/resources/manifest.json",
+  "requiresTameworkDependency": false,
+  "zipIncludes": [],
+  "curseforge": {
+    "projectId": "",
+    "releaseType": "release",
+    "changelogType": "html",
+    "gameVersionTypeIds": [],
+    "requiredProjects": []
+  },
+  "modtale": {
+    "projectId": "",
+    "releaseChannel": "release",
+    "gameVersions": [
+      "0.5.9",
+      "0.5.8",
+      "0.5.7",
+      "0.5.6",
+      "0.5.5",
+      "0.5.4",
+      "0.5.3",
+      "0.5.2",
+      "0.5.1",
+      "0.5.0"
+    ],
+    "versionFieldName": "versionNumber",
+    "changelogFieldName": "changelog",
+    "channelFieldName": "channel",
+    "gameVersionFieldName": "gameVersions"
+  },
+  "modifold": {
+    "projectId": "",
+    "projectSlug": "alecs-console",
+    "requireApprovedProject": true,
+    "releaseChannel": "release",
+    "versionPrefix": "v",
+    "gameVersions": [
+      "0.5.9",
+      "0.5.8",
+      "0.5.7",
+      "0.5.6",
+      "0.5.5",
+      "0.5.4",
+      "0.5.3",
+      "0.5.2",
+      "0.5.1",
+      "0.5.0"
+    ],
+    "loaders": ["Vanilla"],
+    "dependencies": []
+  }
+}

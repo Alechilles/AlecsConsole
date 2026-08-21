@@ -16,7 +16,7 @@ java {
 hytaleTools {
     hytaleVersion = property('hytale_version')
     patchline = property('hytale_patchline')
-    manifestServerVersion = '0.5.x'
+    manifestServerVersion = '>=0.5.0 <0.7.0'
     manifestGroup = 'Alechilles'
     modId = "Alec's Console"
     modDescription = 'A responsive in-game viewer for live and historical Hytale logs.'
