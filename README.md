@@ -1,14 +1,4 @@
-# Alec's Console
-
-A responsive in-game viewer for live and historical Hytale logs, rebuilt from scratch with bounded memory and page-sized UI updates.
-
-## Installation
-
-1. Download `Alec's Console v1.0.0.jar`.
-2. Put the file in the server's `mods/` directory.
-3. Start or restart the server.
-
-Alec's Console supports Hytale Server versions `>=0.5.0 <0.7.0`.
+# Alec's Console!
 
 ## Usage
 
@@ -55,4 +45,4 @@ Requires Java 25 and an installed Hytale release server matching `gradle.propert
 
 The standalone jar is written under `build/libs/`. Release artifacts use the name `Alec's Console v<version>.jar`. This repository is also registered as `:alecs-console` in Alec's local Hytale mod workspace.
 
-The original feature set was inspired by `duke-darius/hytale-console`; this implementation is an independent ground-up rebuild.
+The original feature set was inspired by [duke_darius' Hytale Console](https://www.curseforge.com/hytale/mods/in-game-console); this implementation is an independent ground-up rebuild.
