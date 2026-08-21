@@ -19,6 +19,6 @@
     "Main": "com.alechilles.alecsconsole.AlecsConsolePlugin",
     "IncludesAssetPack": true,
     "UpdateChecker": {
-        "CurseForge": ""
+        "CurseForge": "1662323"
     }
 }

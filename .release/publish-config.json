@@ -11,14 +11,14 @@
   "requiresTameworkDependency": false,
   "zipIncludes": [],
   "curseforge": {
-    "projectId": "",
+    "projectId": "1662323",
     "releaseType": "release",
     "changelogType": "html",
-    "gameVersionTypeIds": [],
+    "gameVersionTypeIds": [65437],
     "requiredProjects": []
   },
   "modtale": {
-    "projectId": "",
+    "projectId": "bc5def47-770e-4c43-b7da-5ba6e626c469",
     "releaseChannel": "release",
     "gameVersions": [
       "0.5.9",
@@ -38,8 +38,8 @@
     "gameVersionFieldName": "gameVersions"
   },
   "modifold": {
-    "projectId": "",
-    "projectSlug": "alecs-console",
+    "projectId": "d5K3tg",
+    "projectSlug": "console",
     "requireApprovedProject": true,
     "releaseChannel": "release",
     "versionPrefix": "v",
