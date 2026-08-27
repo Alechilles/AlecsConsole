@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 - Stable 0.6 Compatibility Hotfix - 2026-08-27
+
+- Expanded declared Hytale Server compatibility to `>=0.5.0 <0.7.0`.
+
 ## 1.0.0
 
 - Added a responsive in-game console for live server logs.
