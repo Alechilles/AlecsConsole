@@ -4,6 +4,9 @@
   "displayName": "Alec's Console",
   "ownerPluginIdentifiers": ["Alechilles:Alec's Console"],
   "packagePrefixes": ["com.alechilles.alecsconsole"],
+  "ui": {
+    "iconTexturePath": "AlecsConsole/Telemetry/ConsoleConsentIcon.png"
+  },
   "hosted": {
     "projectKey": "proj_WilKPrcvgMj2-Vqru6BXF9ZG"
   },
