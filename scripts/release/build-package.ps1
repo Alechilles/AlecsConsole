@@ -29,7 +29,7 @@ if ($sourceVersion.Trim() -ne $normalizedVersion) {
 
 $gradleArguments = @("--no-daemon", "clean", "build")
 if ($SkipTests) {
-    $gradleArguments = @("--no-daemon", "clean", "jar", "-x", "test")
+    $gradleArguments = @("--no-daemon", "clean", "shadowJar", "-x", "test")
 }
 
 & .\gradlew.bat @gradleArguments

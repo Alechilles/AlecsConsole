@@ -39,6 +39,7 @@ hytaleTools {
     modDescription = 'A responsive in-game viewer for live and historical Hytale logs.'
     modCredits = 'Alec (Alechilles)||https://www.curseforge.com/members/alechilles/projects'
     mainClass = 'com.alechilles.alecsconsole.AlecsConsolePlugin'
+    curseforgeId = '1662323'
     includesPack = true
     bundleAssetEditorRuntime = false
     assetPackSourceDirectory = embeddedAssetPackDirectory
