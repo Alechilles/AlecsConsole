@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "projectId": "alecs-console",
+  "displayName": "Alec's Console",
+  "ownerPluginIdentifiers": ["Alechilles:Alec's Console"],
+  "packagePrefixes": ["com.alechilles.alecsconsole"],
+  "hosted": {
+    "projectKey": "proj_WilKPrcvgMj2-Vqru6BXF9ZG"
+  },
+  "telemetry": {
+    "crash": {
+      "supported": true,
+      "defaultEnabled": true,
+      "uncaughtExceptions": true,
+      "setupFailures": true,
+      "startFailures": true,
+      "exceptionalWorldRemovals": true
+    },
+    "stats": {
+      "supported": true,
+      "defaultEnabled": true,
+      "allowedEvents": ["heartbeat"]
+    }
+  }
+}

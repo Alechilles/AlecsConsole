@@ -34,6 +34,23 @@ Hytale creates `config.json` in the plugin's data directory on first load. Defau
 
 Live records, rendered rows, discovered files, pending work, historical results, and selection text all have fixed bounds. No repeating disk scan or on-disk index is used.
 
+## Crash and stats reporting
+
+Alec's Console embeds Beacon 2.0.0, including its consent UI. No separate Beacon
+installation is required. It supports crash reports attributed to Console and
+standard stats heartbeats with player counts, mod/server versions, and runtime
+environment information. Both categories default to enabled; operators can review
+or disable them with `/beacon consent`. Beacon coordinates with other installed
+copies so one runtime handles reporting.
+
+The integration does not submit Console searches, copied selections, or historical
+client/server log files. Crash reporting uses Beacon's crash capture and redaction.
+Beacon failures do not prevent Console from loading or shutting down.
+
+The packaged descriptor registers the `alecs-console` project with Beacon's hosted
+service using its public project key. Beacon's operator settings are stored under
+`mods/Alechilles_Beacon/Settings/` in the server or save directory.
+
 ## Build and development
 
 Requires Java 25 and an installed Hytale release server matching `gradle.properties`.
@@ -44,5 +61,8 @@ Requires Java 25 and an installed Hytale release server matching `gradle.propert
 ```
 
 The standalone jar is written under `build/libs/`. Release artifacts use the name `Alec's Console v<version>.jar`. This repository is also registered as `:alecs-console` in Alec's local Hytale mod workspace.
+
+`build` produces the shaded JAR with the embedded runtime. `prepareEmbeddedAssetPack`
+merges Beacon's UI into Console's resources for both packaging and `runServer`.
 
 The original feature set was inspired by [duke_darius' Hytale Console](https://www.curseforge.com/hytale/mods/in-game-console); this implementation is an independent ground-up rebuild.

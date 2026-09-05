@@ -1,11 +1,14 @@
 package com.alechilles.alecsconsole;
 
+import com.alechilles.beacon.embedded.EmbeddedTelemetryBootstrap;
+import com.alechilles.beacon.embedded.EmbeddedTelemetryService;
 import com.hypixel.hytale.logger.backend.HytaleLoggerBackend;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.util.Config;
 
 import javax.annotation.Nonnull;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 
 /** Alec's Console plugin entry point. */
@@ -13,6 +16,7 @@ public final class AlecsConsolePlugin extends JavaPlugin {
     private final Config<AlecsConsoleConfig> config;
     private LogCaptureSubscriber subscriber;
     private ConsolePageManager pageManager;
+    private EmbeddedTelemetryService telemetry;
 
     public AlecsConsolePlugin(@Nonnull JavaPluginInit init) {
         super(init);
@@ -21,6 +25,21 @@ public final class AlecsConsolePlugin extends JavaPlugin {
 
     @Override
     protected void setup() {
+        try {
+            telemetry = EmbeddedTelemetryBootstrap.bootstrap(this);
+        } catch (RuntimeException | LinkageError failure) {
+            getLogger().at(Level.WARNING).withCause(failure)
+                    .log("Could not initialize Beacon; Console will continue without reporting.");
+        }
+        try {
+            setupConsole();
+        } catch (Throwable failure) {
+            reportSafely(service -> service.captureSetupFailure(failure));
+            throw failure;
+        }
+    }
+
+    private void setupConsole() {
         AlecsConsoleConfig settings = config.get();
         if (settings == null) {
             settings = new AlecsConsoleConfig();
@@ -45,12 +64,31 @@ public final class AlecsConsolePlugin extends JavaPlugin {
         pageManager = manager;
         HytaleLoggerBackend.subscribe(capture);
         getCommandRegistry().registerCommand(new OpenConsoleCommand(manager));
-        manager.start();
-        getLogger().atInfo().log("Alec's Console is ready. Use /console.");
+    }
+
+    @Override
+    protected void start() {
+        try {
+            pageManager.start();
+            getLogger().atInfo().log("Alec's Console is ready. Use /console.");
+        } catch (Throwable failure) {
+            reportSafely(service -> service.captureStartFailure(failure));
+            throw failure;
+        }
+        reportSafely(EmbeddedTelemetryService::start);
     }
 
     @Override
     protected void shutdown() {
+        try {
+            shutdownConsole();
+        } finally {
+            reportSafely(EmbeddedTelemetryService::shutdown);
+            telemetry = null;
+        }
+    }
+
+    private void shutdownConsole() {
         LogCaptureSubscriber capture = subscriber;
         subscriber = null;
         if (capture != null) {
@@ -61,6 +99,18 @@ public final class AlecsConsolePlugin extends JavaPlugin {
         pageManager = null;
         if (manager != null) {
             manager.close();
+        }
+    }
+
+    private void reportSafely(Consumer<EmbeddedTelemetryService> operation) {
+        if (telemetry == null) {
+            return;
+        }
+        try {
+            operation.accept(telemetry);
+        } catch (RuntimeException | LinkageError failure) {
+            getLogger().at(Level.WARNING).withCause(failure)
+                    .log("Beacon operation failed; Console will continue.");
         }
     }
 }
