@@ -36,7 +36,7 @@ Live records, rendered rows, discovered files, pending work, historical results,
 
 ## Crash and stats reporting
 
-Alec's Console embeds Beacon 2.0.0, including its consent UI. No separate Beacon
+Alec's Console embeds Beacon 2.0.1, including its consent UI. No separate Beacon
 installation is required. It supports crash reports attributed to Console and
 standard stats heartbeats with player counts, mod/server versions, and runtime
 environment information. Both categories default to enabled; operators can review
