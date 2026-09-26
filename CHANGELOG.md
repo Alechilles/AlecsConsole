@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added Hytale Update 7 compatibility, including the `0.7.0-pre.4` pre-release, while retaining Update 5 and Update 6 support.
+
 ## 1.1.1 - Beacon Consent Hotfix - 2026-09-05
 
 ### Fixed
