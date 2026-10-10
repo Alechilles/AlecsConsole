@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.2 - Hytale Update 7 Compatibility - 2026-10-09
 
 - Added Hytale Update 7 compatibility, including the `0.7.0-pre.4` pre-release, while retaining Update 5 and Update 6 support.
 
