@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Fixed a world crash when the console page refreshed on Hytale `0.7.0-pre.5` and later.
+
 ## 1.1.2 - Hytale Update 7 Compatibility - 2026-10-09
 
 - Added Hytale Update 7 compatibility, including the `0.7.0-pre.4` pre-release, while retaining Update 5 and Update 6 support.

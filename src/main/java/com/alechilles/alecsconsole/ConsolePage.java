@@ -6,6 +6,7 @@ import com.hypixel.hytale.protocol.packets.interface_.CustomPage;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
+import com.hypixel.hytale.server.core.entity.entities.player.pages.PageManager;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.ui.DropdownEntryInfo;
 import com.hypixel.hytale.server.core.ui.LocalizableString;
@@ -16,6 +17,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Comparator;
@@ -39,6 +41,7 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
     private static final int MAX_ROW_MESSAGE_CHARS = 1_000;
     private static final int MAX_LOGGER_CHOICES = 250;
     private static final String SELECTION_TRUNCATED = "… (selection truncated)";
+    private static final Method UPDATE_CUSTOM_PAGE = findUpdateCustomPage();
 
     private final ConsolePageManager manager;
     private final LiveLogStore liveStore;
@@ -114,11 +117,29 @@ public final class ConsolePage extends InteractiveCustomUIPage<ConsoleEventData>
             if (player == null || player.getPageManager().getCustomPage() != this) {
                 return;
             }
-            player.getPageManager().updateCustomPage(new CustomPage(
+            CustomPage update = new CustomPage(
                     getClass().getName(), false, clear, lifetime,
                     commands == null ? UICommandBuilder.EMPTY_COMMAND_ARRAY : commands.getCommands(),
-                    events == null ? UIEventBuilder.EMPTY_EVENT_BINDING_ARRAY : events.getEvents()));
+                    events == null ? UIEventBuilder.EMPTY_EVENT_BINDING_ARRAY : events.getEvents());
+            try {
+                UPDATE_CUSTOM_PAGE.invoke(player.getPageManager(), update);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Could not update the console page.", e);
+            }
         });
+    }
+
+    /** Update 7 renamed PageManager.updateCustomPage to updateLegacyCustomPage. */
+    private static Method findUpdateCustomPage() {
+        try {
+            return PageManager.class.getMethod("updateLegacyCustomPage", CustomPage.class);
+        } catch (NoSuchMethodException e) {
+            try {
+                return PageManager.class.getMethod("updateCustomPage", CustomPage.class);
+            } catch (NoSuchMethodException e2) {
+                throw new IllegalStateException("Unsupported Hytale version: no custom page update method.", e2);
+            }
+        }
     }
 
     @Override
