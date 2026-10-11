@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3 - Update 7 Crash Hotfix - 2026-10-11
 
 ### Fixed
 
